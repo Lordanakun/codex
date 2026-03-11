@@ -917,6 +917,22 @@ impl UnauthorizedRecovery {
         !matches!(self.step, UnauthorizedRecoveryStep::Done)
     }
 
+    pub fn mode_name(&self) -> &'static str {
+        match self.mode {
+            UnauthorizedRecoveryMode::Managed => "managed",
+            UnauthorizedRecoveryMode::External => "external",
+        }
+    }
+
+    pub fn step_name(&self) -> &'static str {
+        match self.step {
+            UnauthorizedRecoveryStep::Reload => "reload",
+            UnauthorizedRecoveryStep::RefreshToken => "refresh_token",
+            UnauthorizedRecoveryStep::ExternalRefresh => "external_refresh",
+            UnauthorizedRecoveryStep::Done => "done",
+        }
+    }
+
     pub async fn next(&mut self) -> Result<(), RefreshTokenError> {
         if !self.has_next() {
             return Err(RefreshTokenError::Permanent(RefreshTokenFailedError::new(
