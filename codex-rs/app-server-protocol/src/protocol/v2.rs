@@ -261,7 +261,7 @@ impl From<CoreAskForApproval> for AskForApproval {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
 #[serde(rename_all = "kebab-case")]
 #[ts(rename_all = "kebab-case", export_to = "v2/")]
-/// [UNSTABLE] Controls whether approvals remain manual or are automatically reviewed.
+/// Controls whether approvals remain manual or are automatically reviewed.
 pub enum ApprovalReviewPolicy {
     ManualOnly,
     AutoOnly,
@@ -548,9 +548,9 @@ pub struct ProfileV2 {
     pub model_provider: Option<String>,
     #[experimental(nested)]
     pub approval_policy: Option<AskForApproval>,
-    /// [UNSTABLE] Optional override for how approval requests are reviewed in
-    /// this profile. Use `manual-only` for user approval prompts or
-    /// `auto-only` for automatic approval review.
+    /// Optional override for how approval requests are reviewed in this
+    /// profile. Use `manual-only` for user approval prompts or `auto-only` for
+    /// automatic approval review.
     pub approval_review_policy: Option<ApprovalReviewPolicy>,
     pub service_tier: Option<ServiceTier>,
     pub model_reasoning_effort: Option<ReasoningEffort>,
@@ -651,7 +651,7 @@ pub struct Config {
     pub model_provider: Option<String>,
     #[experimental(nested)]
     pub approval_policy: Option<AskForApproval>,
-    /// [UNSTABLE] Optional default for how approval requests are reviewed. Use
+    /// Optional default for how approval requests are reviewed. Use
     /// `manual-only` for user approval prompts or `auto-only` for automatic
     /// approval review.
     pub approval_review_policy: Option<ApprovalReviewPolicy>,
@@ -2308,8 +2308,8 @@ pub struct ThreadStartParams {
     #[experimental(nested)]
     #[ts(optional = nullable)]
     pub approval_policy: Option<AskForApproval>,
-    /// [UNSTABLE] Override whether approvals stay manual or are automatically
-    /// reviewed for this thread and subsequent turns.
+    /// Override whether approvals stay manual or are automatically reviewed
+    /// for this thread and subsequent turns.
     #[ts(optional = nullable)]
     pub approval_review_policy: Option<ApprovalReviewPolicy>,
     #[ts(optional = nullable)]
@@ -2374,8 +2374,7 @@ pub struct ThreadStartResponse {
     pub cwd: PathBuf,
     #[experimental(nested)]
     pub approval_policy: AskForApproval,
-    /// [UNSTABLE] Whether approvals remain manual or are automatically
-    /// reviewed.
+    /// Whether approvals remain manual or are automatically reviewed.
     pub approval_review_policy: ApprovalReviewPolicy,
     pub sandbox: SandboxPolicy,
     pub reasoning_effort: Option<ReasoningEffort>,
@@ -2429,8 +2428,8 @@ pub struct ThreadResumeParams {
     #[experimental(nested)]
     #[ts(optional = nullable)]
     pub approval_policy: Option<AskForApproval>,
-    /// [UNSTABLE] Override whether approvals stay manual or are automatically
-    /// reviewed for this thread and subsequent turns.
+    /// Override whether approvals stay manual or are automatically reviewed
+    /// for this thread and subsequent turns.
     #[ts(optional = nullable)]
     pub approval_review_policy: Option<ApprovalReviewPolicy>,
     #[ts(optional = nullable)]
@@ -2461,8 +2460,7 @@ pub struct ThreadResumeResponse {
     pub cwd: PathBuf,
     #[experimental(nested)]
     pub approval_policy: AskForApproval,
-    /// [UNSTABLE] Whether approvals remain manual or are automatically
-    /// reviewed.
+    /// Whether approvals remain manual or are automatically reviewed.
     pub approval_review_policy: ApprovalReviewPolicy,
     pub sandbox: SandboxPolicy,
     pub reasoning_effort: Option<ReasoningEffort>,
@@ -2507,8 +2505,8 @@ pub struct ThreadForkParams {
     #[experimental(nested)]
     #[ts(optional = nullable)]
     pub approval_policy: Option<AskForApproval>,
-    /// [UNSTABLE] Override whether approvals stay manual or are automatically
-    /// reviewed for this thread and subsequent turns.
+    /// Override whether approvals stay manual or are automatically reviewed
+    /// for this thread and subsequent turns.
     #[ts(optional = nullable)]
     pub approval_review_policy: Option<ApprovalReviewPolicy>,
     #[ts(optional = nullable)]
@@ -2539,8 +2537,7 @@ pub struct ThreadForkResponse {
     pub cwd: PathBuf,
     #[experimental(nested)]
     pub approval_policy: AskForApproval,
-    /// [UNSTABLE] Whether approvals remain manual or are automatically
-    /// reviewed.
+    /// Whether approvals remain manual or are automatically reviewed.
     pub approval_review_policy: ApprovalReviewPolicy,
     pub sandbox: SandboxPolicy,
     pub reasoning_effort: Option<ReasoningEffort>,
@@ -3626,8 +3623,8 @@ pub struct TurnStartParams {
     #[experimental(nested)]
     #[ts(optional = nullable)]
     pub approval_policy: Option<AskForApproval>,
-    /// [UNSTABLE] Override whether approvals stay manual or are automatically
-    /// reviewed for this turn and subsequent turns.
+    /// Override whether approvals stay manual or are automatically reviewed
+    /// for this turn and subsequent turns.
     #[ts(optional = nullable)]
     pub approval_review_policy: Option<ApprovalReviewPolicy>,
     /// Override the sandbox policy for this turn and subsequent turns.
