@@ -1,5 +1,10 @@
+use super::AuthRequestTelemetryContext;
 use super::ModelClient;
-use super::extract_unauthorized_debug_context;
+use super::PendingUnauthorizedRetry;
+use super::UnauthorizedRecoveryExecution;
+use crate::endpoint_config_telemetry::EndpointConfigTelemetrySource;
+use crate::model_provider_info::LMSTUDIO_OSS_PROVIDER_ID;
+use crate::response_debug_context::extract_response_debug_context;
 use codex_api::TransportError;
 use codex_otel::SessionTelemetry;
 use codex_protocol::ThreadId;
@@ -26,6 +31,47 @@ fn test_model_client(session_source: SessionSource) -> ModelClient {
         false,
         None,
     )
+}
+
+#[test]
+fn model_client_new_requires_explicit_provider_id_for_builtin_endpoint_defaults() {
+    let provider = crate::model_provider_info::create_oss_provider_with_base_url(
+        "http://localhost:1234/v1",
+        crate::model_provider_info::WireApi::Responses,
+    );
+
+    let client = ModelClient::new(
+        None,
+        ThreadId::new(),
+        provider.clone(),
+        SessionSource::Cli,
+        None,
+        false,
+        false,
+        false,
+        None,
+    );
+    let client_with_provider_id = ModelClient::new_with_provider_id(
+        None,
+        ThreadId::new(),
+        LMSTUDIO_OSS_PROVIDER_ID,
+        provider,
+        SessionSource::Cli,
+        None,
+        false,
+        false,
+        false,
+        None,
+    );
+
+    assert_eq!(
+        client.state.endpoint_telemetry_source,
+        EndpointConfigTelemetrySource::new("config_toml", false)
+    );
+    assert_eq!(
+        client_with_provider_id.state.endpoint_telemetry_source,
+        EndpointConfigTelemetrySource::new("default", true)
+    );
 }
 
 fn test_model_info() -> ModelInfo {
@@ -99,7 +145,7 @@ async fn summarize_memories_returns_empty_for_empty_input() {
 }
 
 #[test]
-fn extract_unauthorized_debug_context_decodes_identity_headers() {
+fn extract_response_debug_context_decodes_identity_headers() {
     let mut headers = http::HeaderMap::new();
     headers.insert(
         "x-oai-request-id",
@@ -115,7 +161,7 @@ fn extract_unauthorized_debug_context_decodes_identity_headers() {
         http::HeaderValue::from_static("eyJlcnJvciI6eyJjb2RlIjoidG9rZW5fZXhwaXJlZCJ9fQ=="),
     );
 
-    let context = extract_unauthorized_debug_context(&TransportError::Http {
+    let context = extract_response_debug_context(&TransportError::Http {
         status: StatusCode::UNAUTHORIZED,
         url: Some("https://chatgpt.com/backend-api/codex/models".to_string()),
         headers: Some(headers),
@@ -129,4 +175,20 @@ fn extract_unauthorized_debug_context_decodes_identity_headers() {
         Some("missing_authorization_header")
     );
     assert_eq!(context.auth_error_code.as_deref(), Some("token_expired"));
+}
+
+#[test]
+fn auth_request_telemetry_context_tracks_attached_auth_and_retry_phase() {
+    let auth_context = AuthRequestTelemetryContext::new(
+        &crate::api_bridge::CoreAuthProvider::for_test(Some("access-token"), Some("workspace-123")),
+        PendingUnauthorizedRetry::from_recovery(UnauthorizedRecoveryExecution {
+            mode: "managed",
+            phase: "refresh_token",
+        }),
+    );
+
+    assert!(auth_context.auth_header_attached);
+    assert!(auth_context.retry_after_unauthorized);
+    assert_eq!(auth_context.recovery_mode, Some("managed"));
+    assert_eq!(auth_context.recovery_phase, Some("refresh_token"));
 }

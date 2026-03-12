@@ -105,8 +105,8 @@ fn map_api_error_extracts_identity_auth_details_from_headers() {
         X_OPENAI_AUTHORIZATION_ERROR_HEADER,
         http::HeaderValue::from_static("missing_authorization_header"),
     );
-    let x_error_json = base64::engine::general_purpose::STANDARD
-        .encode(r#"{"error":{"code":"token_expired"}}"#);
+    let x_error_json =
+        base64::engine::general_purpose::STANDARD.encode(r#"{"error":{"code":"token_expired"}}"#);
     headers.insert(
         X_ERROR_JSON_HEADER,
         http::HeaderValue::from_str(&x_error_json).expect("valid x-error-json header"),
@@ -129,4 +129,14 @@ fn map_api_error_extracts_identity_auth_details_from_headers() {
         Some("missing_authorization_header")
     );
     assert_eq!(err.identity_error_code.as_deref(), Some("token_expired"));
+}
+
+#[test]
+fn core_auth_provider_reports_when_auth_header_will_attach() {
+    let auth = CoreAuthProvider {
+        token: Some("access-token".to_string()),
+        account_id: None,
+    };
+
+    assert!(auth.auth_header_attached());
 }

@@ -215,6 +215,22 @@ pub(crate) struct CoreAuthProvider {
     account_id: Option<String>,
 }
 
+impl CoreAuthProvider {
+    pub(crate) fn auth_header_attached(&self) -> bool {
+        self.token
+            .as_ref()
+            .is_some_and(|token| http::HeaderValue::from_str(&format!("Bearer {token}")).is_ok())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn for_test(token: Option<&str>, account_id: Option<&str>) -> Self {
+        Self {
+            token: token.map(str::to_string),
+            account_id: account_id.map(str::to_string),
+        }
+    }
+}
+
 impl ApiAuthProvider for CoreAuthProvider {
     fn bearer_token(&self) -> Option<String> {
         self.token.clone()
