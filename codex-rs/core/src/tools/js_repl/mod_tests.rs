@@ -818,6 +818,87 @@ console.log("cell-complete");
     Ok(())
 }
 
+#[tokio::test]
+async fn js_repl_persisted_tool_helpers_work_across_cells() -> anyhow::Result<()> {
+    if !can_run_js_repl_runtime_tests().await {
+        return Ok(());
+    }
+
+    let (session, mut turn) = make_session_and_context().await;
+    turn.approval_policy
+        .set(AskForApproval::Never)
+        .expect("test setup should allow updating approval policy");
+    set_danger_full_access(&mut turn);
+
+    let session = Arc::new(session);
+    let turn = Arc::new(turn);
+    let tracker = Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::default()));
+    let manager = turn.js_repl.manager().await?;
+
+    let global_marker = turn
+        .cwd
+        .join(format!("js-repl-global-helper-{}.txt", Uuid::new_v4()));
+    let lexical_marker = turn
+        .cwd
+        .join(format!("js-repl-lexical-helper-{}.txt", Uuid::new_v4()));
+    let global_marker_json = serde_json::to_string(&global_marker.to_string_lossy().to_string())?;
+    let lexical_marker_json = serde_json::to_string(&lexical_marker.to_string_lossy().to_string())?;
+
+    manager
+        .execute(
+            Arc::clone(&session),
+            Arc::clone(&turn),
+            Arc::clone(&tracker),
+            JsReplArgs {
+                code: format!(
+                    r#"
+const globalMarker = {global_marker_json};
+const lexicalMarker = {lexical_marker_json};
+const savedTool = codex.tool;
+globalThis.globalToolHelper = {{
+  run: () => savedTool("shell_command", {{ command: `printf global_helper > "${{globalMarker}}"` }}),
+}};
+const lexicalToolHelper = {{
+  run: () => savedTool("shell_command", {{ command: `printf lexical_helper > "${{lexicalMarker}}"` }}),
+}};
+"#
+                ),
+                timeout_ms: Some(10_000),
+            },
+        )
+        .await?;
+
+    let next = manager
+        .execute(
+            Arc::clone(&session),
+            Arc::clone(&turn),
+            tracker,
+            JsReplArgs {
+                code: r#"
+await globalToolHelper.run();
+await lexicalToolHelper.run();
+console.log("helpers-ran");
+"#
+                .to_string(),
+                timeout_ms: Some(10_000),
+            },
+        )
+        .await?;
+
+    assert!(next.output.contains("helpers-ran"));
+    assert_eq!(
+        tokio::fs::read_to_string(&global_marker).await?,
+        "global_helper"
+    );
+    assert_eq!(
+        tokio::fs::read_to_string(&lexical_marker).await?,
+        "lexical_helper"
+    );
+    let _ = tokio::fs::remove_file(&global_marker).await;
+    let _ = tokio::fs::remove_file(&lexical_marker).await;
+    Ok(())
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn js_repl_does_not_auto_attach_image_via_view_image_tool() -> anyhow::Result<()> {
     if !can_run_js_repl_runtime_tests().await {
@@ -1109,6 +1190,88 @@ console.log("cell-complete");
             }]
             .as_slice()
         );
+    assert!(session.get_pending_input().await.is_empty());
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn js_repl_persisted_emit_image_helpers_work_across_cells() -> anyhow::Result<()> {
+    if !can_run_js_repl_runtime_tests().await {
+        return Ok(());
+    }
+
+    let (session, turn) = make_session_and_context().await;
+    if !turn
+        .model_info
+        .input_modalities
+        .contains(&InputModality::Image)
+    {
+        return Ok(());
+    }
+
+    let session = Arc::new(session);
+    let turn = Arc::new(turn);
+    *session.active_turn.lock().await = Some(crate::state::ActiveTurn::default());
+
+    let tracker = Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::default()));
+    let manager = turn.js_repl.manager().await?;
+    let data_url = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
+
+    manager
+        .execute(
+            Arc::clone(&session),
+            Arc::clone(&turn),
+            Arc::clone(&tracker),
+            JsReplArgs {
+                code: format!(
+                    r#"
+const dataUrl = "{data_url}";
+const savedEmitImage = codex.emitImage;
+globalThis.globalEmitHelper = {{
+  run: () => savedEmitImage(dataUrl),
+}};
+const lexicalEmitHelper = {{
+  run: () => savedEmitImage(dataUrl),
+}};
+"#
+                ),
+                timeout_ms: Some(15_000),
+            },
+        )
+        .await?;
+
+    let next = manager
+        .execute(
+            Arc::clone(&session),
+            Arc::clone(&turn),
+            tracker,
+            JsReplArgs {
+                code: r#"
+await globalEmitHelper.run();
+await lexicalEmitHelper.run();
+console.log("helpers-ran");
+"#
+                .to_string(),
+                timeout_ms: Some(15_000),
+            },
+        )
+        .await?;
+
+    assert!(next.output.contains("helpers-ran"));
+    assert_eq!(
+        next.content_items,
+        vec![
+            FunctionCallOutputContentItem::InputImage {
+                image_url: data_url.to_string(),
+                detail: None,
+            },
+            FunctionCallOutputContentItem::InputImage {
+                image_url: data_url.to_string(),
+                detail: None,
+            },
+        ]
+    );
     assert!(session.get_pending_input().await.is_empty());
 
     Ok(())
@@ -1532,6 +1695,95 @@ await codex.emitImage(out);
 
     Ok(())
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn js_repl_dynamic_tool_response_preserves_js_line_separator_text() -> anyhow::Result<()> {
+    if !can_run_js_repl_runtime_tests().await {
+        return Ok(());
+    }
+
+    for (tool_name, description, expected_text, literal) in [
+        (
+            "line_separator_tool",
+            "Returns text containing U+2028.",
+            "alpha\u{2028}omega".to_string(),
+            r#""alpha\u2028omega""#,
+        ),
+        (
+            "paragraph_separator_tool",
+            "Returns text containing U+2029.",
+            "alpha\u{2029}omega".to_string(),
+            r#""alpha\u2029omega""#,
+        ),
+    ] {
+        let (session, turn, rx_event) =
+            make_session_and_context_with_dynamic_tools_and_rx(vec![DynamicToolSpec {
+                name: tool_name.to_string(),
+                description: description.to_string(),
+                input_schema: serde_json::json!({
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": false
+                }),
+            }])
+            .await;
+
+        *session.active_turn.lock().await = Some(crate::state::ActiveTurn::default());
+
+        let tracker = Arc::new(tokio::sync::Mutex::new(TurnDiffTracker::default()));
+        let manager = turn.js_repl.manager().await?;
+        let code = format!(
+            r#"
+const out = await codex.tool("{tool_name}", {{}});
+const text = typeof out === "string" ? out : out?.output;
+console.log(text === {literal});
+console.log(text);
+"#
+        );
+
+        let session_for_response = Arc::clone(&session);
+        let expected_text_for_response = expected_text.clone();
+        let response_watcher = async move {
+            loop {
+                let event = tokio::time::timeout(Duration::from_secs(2), rx_event.recv()).await??;
+                if let EventMsg::DynamicToolCallRequest(request) = event.msg {
+                    session_for_response
+                        .notify_dynamic_tool_response(
+                            &request.call_id,
+                            DynamicToolResponse {
+                                content_items: vec![DynamicToolCallOutputContentItem::InputText {
+                                    text: expected_text_for_response.clone(),
+                                }],
+                                success: true,
+                            },
+                        )
+                        .await;
+                    return Ok::<(), anyhow::Error>(());
+                }
+            }
+        };
+
+        let (result, response_watcher_result) = tokio::join!(
+            manager.execute(
+                Arc::clone(&session),
+                Arc::clone(&turn),
+                tracker,
+                JsReplArgs {
+                    code,
+                    timeout_ms: Some(15_000),
+                },
+            ),
+            response_watcher,
+        );
+        response_watcher_result?;
+
+        let result = result?;
+        assert_eq!(result.output, format!("true\n{expected_text}"));
+    }
+
+    Ok(())
+}
+
 #[tokio::test]
 async fn js_repl_prefers_env_node_module_dirs_over_config() -> anyhow::Result<()> {
     if !can_run_js_repl_runtime_tests().await {
