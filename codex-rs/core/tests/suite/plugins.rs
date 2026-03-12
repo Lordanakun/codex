@@ -188,6 +188,7 @@ async fn plugin_instructions_are_split_from_agents_instructions() -> Result<()> 
                 text: "hello".into(),
                 text_elements: Vec::new(),
             }],
+            ephemeral_context: Vec::new(),
             final_output_json_schema: None,
         })
         .await?;
@@ -282,6 +283,7 @@ async fn explicit_plugin_mentions_inject_plugin_guidance() -> Result<()> {
                 name: "sample".into(),
                 path: format!("plugin://{SAMPLE_PLUGIN_CONFIG_NAME}"),
             }],
+            ephemeral_context: Vec::new(),
             final_output_json_schema: None,
         })
         .await?;

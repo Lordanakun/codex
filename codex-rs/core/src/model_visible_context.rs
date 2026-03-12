@@ -17,6 +17,7 @@ use codex_protocol::models::MessageRole;
 use codex_protocol::models::ResponseInputItem;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::protocol::TurnContextItem;
+use codex_protocol::user_input::EphemeralContext;
 
 pub(crate) const SKILL_OPEN_TAG: &str = "<skill>";
 pub(crate) const SKILL_CLOSE_TAG: &str = "</skill>";
@@ -172,7 +173,7 @@ type ContextualUserTurnStateBuilder = fn(
     Option<&TurnContextItem>,
     &TurnContext,
     &TurnContextDiffParams<'_>,
-) -> Option<ContextualUserTextFragment>;
+) -> Vec<ContextualUserTextFragment>;
 
 #[derive(Clone, Copy)]
 struct ContextualUserFragmentRegistration {
@@ -245,16 +246,30 @@ fn detect_contextual_user_fragment<F: ContextualUserFragmentDetector>(text: &str
     F::matches_contextual_user_text(text)
 }
 
-fn build_contextual_user_turn_state_fragment<F>(
+fn build_registered_contextual_user_turn_state_fragments<F>(
     reference_context_item: Option<&TurnContextItem>,
     turn_context: &TurnContext,
     params: &TurnContextDiffParams<'_>,
-) -> Option<ContextualUserTextFragment>
+) -> Vec<ContextualUserTextFragment>
 where
     F: TurnContextDiffFragment<Role = ContextualUserContextRole>,
 {
-    let fragment = F::build(turn_context, reference_context_item, params)?;
-    Some(ContextualUserTextFragment::new(fragment.render_text()))
+    F::build(turn_context, reference_context_item, params)
+        .into_iter()
+        .map(|fragment| ContextualUserTextFragment::new(fragment.render_text()))
+        .collect()
+}
+
+fn build_ephemeral_context_turn_state_fragments(
+    _reference_context_item: Option<&TurnContextItem>,
+    turn_context: &TurnContext,
+    _params: &TurnContextDiffParams<'_>,
+) -> Vec<ContextualUserTextFragment> {
+    turn_context
+        .ephemeral_context
+        .iter()
+        .map(|fragment| ContextualUserTextFragment::new(fragment.render_text()))
+        .collect()
 }
 
 /// Canonical contextual-user fragment registry.
@@ -266,16 +281,22 @@ const REGISTERED_CONTEXTUAL_USER_FRAGMENTS: &[ContextualUserFragmentRegistration
     ContextualUserFragmentRegistration::new(
         detect_contextual_user_fragment::<crate::instructions::AgentsMdInstructions>,
         Some(
-            build_contextual_user_turn_state_fragment::<crate::instructions::AgentsMdInstructions>,
+            build_registered_contextual_user_turn_state_fragments::<
+                crate::instructions::AgentsMdInstructions,
+            >,
         ),
     ),
     ContextualUserFragmentRegistration::new(
         detect_contextual_user_fragment::<crate::environment_context::EnvironmentContext>,
         Some(
-            build_contextual_user_turn_state_fragment::<
+            build_registered_contextual_user_turn_state_fragments::<
                 crate::environment_context::EnvironmentContext,
             >,
         ),
+    ),
+    ContextualUserFragmentRegistration::new(
+        detect_contextual_user_fragment::<EphemeralContext>,
+        Some(build_ephemeral_context_turn_state_fragments),
     ),
     ContextualUserFragmentRegistration::new(
         detect_contextual_user_fragment::<crate::instructions::SkillInstructions>,
@@ -315,6 +336,13 @@ pub(crate) fn is_contextual_user_fragment(content_item: &ContentItem) -> bool {
         || is_legacy_contextual_user_fragment(text)
 }
 
+pub(crate) fn is_ephemeral_context_fragment(content_item: &ContentItem) -> bool {
+    let ContentItem::InputText { text } = content_item else {
+        return false;
+    };
+    detect_contextual_user_fragment::<EphemeralContext>(text)
+}
+
 pub(crate) fn build_contextual_user_turn_state_fragments(
     reference_context_item: Option<&TurnContextItem>,
     turn_context: &TurnContext,
@@ -322,10 +350,11 @@ pub(crate) fn build_contextual_user_turn_state_fragments(
 ) -> Vec<ContextualUserTextFragment> {
     REGISTERED_CONTEXTUAL_USER_FRAGMENTS
         .iter()
-        .filter_map(|registration| {
+        .flat_map(|registration| {
             registration
                 .turn_state_builder
-                .and_then(|build| build(reference_context_item, turn_context, params))
+                .map(|build| build(reference_context_item, turn_context, params))
+                .unwrap_or_default()
         })
         .collect()
 }
@@ -378,6 +407,13 @@ mod tests {
         assert!(is_contextual_user_fragment(&ContentItem::InputText {
             text: "<subagent_notification>\n{\"agent_id\":\"a\",\"status\":\"completed\"}\n</subagent_notification>"
                 .to_string(),
+        }));
+    }
+
+    #[test]
+    fn detects_ephemeral_context_fragment() {
+        assert!(is_contextual_user_fragment(&ContentItem::InputText {
+            text: "<additional_context_for_this_turn>\n  <title>Context from my editor</title>\n  <content>\n## Active file: src/main.rs\n  </content>\n</additional_context_for_this_turn>".to_string(),
         }));
     }
 

@@ -322,6 +322,7 @@ use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ReasoningEffort as ReasoningEffortConfig;
 use codex_protocol::protocol::CodexErrorInfo;
 use codex_protocol::protocol::InitialHistory;
+use codex_protocol::user_input::EphemeralContext;
 use codex_protocol::user_input::UserInput;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_readiness::Readiness;
@@ -773,6 +774,7 @@ pub(crate) struct TurnContext {
     pub(crate) sub_id: String,
     pub(crate) trace_id: Option<String>,
     pub(crate) realtime_active: bool,
+    pub(crate) ephemeral_context: Vec<EphemeralContext>,
     pub(crate) config: Arc<Config>,
     pub(crate) auth_manager: Option<Arc<AuthManager>>,
     pub(crate) model_info: ModelInfo,
@@ -874,6 +876,7 @@ impl TurnContext {
             sub_id: self.sub_id.clone(),
             trace_id: self.trace_id.clone(),
             realtime_active: self.realtime_active,
+            ephemeral_context: self.ephemeral_context.clone(),
             config: Arc::new(config),
             auth_manager: self.auth_manager.clone(),
             model_info: model_info.clone(),
@@ -1292,6 +1295,7 @@ impl Session {
             sub_id,
             trace_id: current_span_trace_id(),
             realtime_active: false,
+            ephemeral_context: Vec::new(),
             config: per_turn_config.clone(),
             auth_manager: auth_manager_for_context,
             model_info: model_info.clone(),
@@ -1925,6 +1929,7 @@ impl Session {
                     text,
                     text_elements: Vec::new(),
                 }],
+                ephemeral_context: Vec::new(),
                 final_output_json_schema: None,
             },
         )
@@ -2192,6 +2197,7 @@ impl Session {
         &self,
         sub_id: String,
         updates: SessionSettingsUpdate,
+        ephemeral_context: Vec<EphemeralContext>,
     ) -> ConstraintResult<Arc<TurnContext>> {
         let (
             session_configuration,
@@ -2245,6 +2251,7 @@ impl Session {
                 session_configuration,
                 updates.final_output_json_schema,
                 sandbox_policy_changed,
+                ephemeral_context,
             )
             .await)
     }
@@ -2255,6 +2262,7 @@ impl Session {
         session_configuration: SessionConfiguration,
         final_output_json_schema: Option<Option<Value>>,
         sandbox_policy_changed: bool,
+        ephemeral_context: Vec<EphemeralContext>,
     ) -> Arc<TurnContext> {
         let per_turn_config = Self::build_per_turn_config(&session_configuration);
         self.services
@@ -2313,6 +2321,7 @@ impl Session {
             skills_outcome,
         );
         turn_context.realtime_active = self.conversation.running_state().await.is_some();
+        turn_context.ephemeral_context = ephemeral_context;
 
         if let Some(final_schema) = final_output_json_schema {
             turn_context.final_output_json_schema = final_schema;
@@ -2470,7 +2479,7 @@ impl Session {
             let state = self.state.lock().await;
             state.session_configuration.clone()
         };
-        self.new_turn_from_configuration(sub_id, session_configuration, None, false)
+        self.new_turn_from_configuration(sub_id, session_configuration, None, false, Vec::new())
             .await
     }
 
@@ -4346,7 +4355,7 @@ mod handlers {
     }
 
     pub async fn user_input_or_turn(sess: &Arc<Session>, sub_id: String, op: Op) {
-        let (items, updates) = match op {
+        let (items, ephemeral_context, updates) = match op {
             Op::UserTurn {
                 cwd,
                 approval_policy,
@@ -4372,6 +4381,7 @@ mod handlers {
                 });
                 (
                     items,
+                    Vec::new(),
                     SessionSettingsUpdate {
                         cwd: Some(cwd),
                         approval_policy: Some(approval_policy),
@@ -4388,9 +4398,11 @@ mod handlers {
             }
             Op::UserInput {
                 items,
+                ephemeral_context,
                 final_output_json_schema,
             } => (
                 items,
+                ephemeral_context,
                 SessionSettingsUpdate {
                     final_output_json_schema: Some(final_output_json_schema),
                     ..Default::default()
@@ -4399,7 +4411,10 @@ mod handlers {
             _ => unreachable!(),
         };
 
-        let Ok(current_context) = sess.new_turn_with_sub_id(sub_id, updates).await else {
+        let Ok(current_context) = sess
+            .new_turn_with_sub_id(sub_id, updates, ephemeral_context)
+            .await
+        else {
             // new_turn_with_sub_id already emits the error event.
             return;
         };
@@ -5201,6 +5216,7 @@ async fn spawn_review_thread(
         sub_id: review_turn_id,
         trace_id: current_span_trace_id(),
         realtime_active: parent_turn_context.realtime_active,
+        ephemeral_context: Vec::new(),
         config: per_turn_config,
         auth_manager: auth_manager_for_context,
         model_info: model_info.clone(),

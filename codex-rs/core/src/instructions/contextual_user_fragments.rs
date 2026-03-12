@@ -19,7 +19,10 @@ use crate::model_visible_context::SKILL_OPEN_TAG;
 use crate::model_visible_context::TaggedContextualUserFragment;
 use crate::model_visible_context::TurnContextDiffFragment;
 use crate::model_visible_context::TurnContextDiffParams;
+use codex_protocol::protocol::EPHEMERAL_CONTEXT_CLOSE_TAG;
+use codex_protocol::protocol::EPHEMERAL_CONTEXT_OPEN_TAG;
 use codex_protocol::protocol::TurnContextItem;
+use codex_protocol::user_input::EphemeralContext;
 
 // ---------------------------------------------------------------------------
 // AGENTS instructions fragment
@@ -138,6 +141,26 @@ impl TaggedContextualUserFragment for PluginInstructions {
 }
 
 // ---------------------------------------------------------------------------
+// Ephemeral context fragment
+// ---------------------------------------------------------------------------
+
+impl ModelVisibleContextFragment for EphemeralContext {
+    type Role = ContextualUserContextRole;
+
+    fn render_text(&self) -> String {
+        Self::wrap_contextual_user_body(format!(
+            "  <title>{}</title>\n  <content>\n{}\n  </content>",
+            self.title, self.text
+        ))
+    }
+}
+
+impl TaggedContextualUserFragment for EphemeralContext {
+    const MARKERS: ContextualUserFragmentMarkers =
+        ContextualUserFragmentMarkers::new(EPHEMERAL_CONTEXT_OPEN_TAG, EPHEMERAL_CONTEXT_CLOSE_TAG);
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -244,5 +267,38 @@ mod tests {
         };
 
         assert_eq!(text, "<plugins>\n## Plugins\n- `sample`\n</plugins>");
+    }
+
+    #[test]
+    fn test_ephemeral_context() {
+        let ephemeral_context = EphemeralContext {
+            title: "Context from my editor".to_string(),
+            text: "## Active file: src/main.rs".to_string(),
+        };
+        let response_item = ephemeral_context.into_message();
+
+        let ResponseItem::Message { role, content, .. } = response_item else {
+            panic!("expected ResponseItem::Message");
+        };
+
+        assert_eq!(role, "user");
+
+        let [ContentItem::InputText { text }] = content.as_slice() else {
+            panic!("expected one InputText content item");
+        };
+
+        assert_eq!(
+            text,
+            "<additional_context_for_this_turn>\n  <title>Context from my editor</title>\n  <content>\n## Active file: src/main.rs\n  </content>\n</additional_context_for_this_turn>",
+        );
+    }
+
+    #[test]
+    fn test_is_ephemeral_context() {
+        assert!(
+            <EphemeralContext as ContextualUserFragmentDetector>::matches_contextual_user_text(
+                "<additional_context_for_this_turn>\n  <title>Context from my editor</title>\n  <content>\n## Active file: src/main.rs\n  </content>\n</additional_context_for_this_turn>"
+            )
+        );
     }
 }
