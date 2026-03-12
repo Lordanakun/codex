@@ -47,8 +47,6 @@ use tracing_subscriber::layer::SubscriberExt;
 use wiremock::MockServer;
 
 const TEST_CONNECTION_ID: ConnectionId = ConnectionId(7);
-const CORE_TURN_SANITY_SPAN_NAMES: &[&str] =
-    &["submission_dispatch", "session_task.turn", "run_turn"];
 
 struct TestTracing {
     exporter: InMemorySpanExporter,
@@ -441,6 +439,21 @@ where
     );
 }
 
+async fn wait_for_new_exported_spans<F>(
+    tracing: &TestTracing,
+    baseline_len: usize,
+    predicate: F,
+) -> Vec<SpanData>
+where
+    F: Fn(&[SpanData]) -> bool,
+{
+    let spans = wait_for_exported_spans(tracing, |spans| {
+        spans.len() > baseline_len && predicate(&spans[baseline_len..])
+    })
+    .await;
+    spans.into_iter().skip(baseline_len).collect()
+}
+
 #[tokio::test(flavor = "current_thread")]
 async fn thread_start_jsonrpc_span_exports_server_span_and_parents_children() -> Result<()> {
     let _guard = tracing_test_guard().lock().await;
@@ -452,20 +465,59 @@ async fn thread_start_jsonrpc_span_exports_server_span_and_parents_children() ->
         ..
     } = RemoteTrace::new("00000000000000000000000000000011", "0000000000000022");
 
-    let _: ThreadStartResponse = harness.start_thread(2, Some(remote_trace)).await;
-    let spans = wait_for_exported_spans(harness.tracing, |spans| {
+    let _: ThreadStartResponse = harness.start_thread(20_002, None).await;
+    let untraced_spans = wait_for_exported_spans(harness.tracing, |spans| {
         spans.iter().any(|span| {
             span.span_kind == SpanKind::Server
                 && span_attr(span, "rpc.method") == Some("thread/start")
-                && span.span_context.trace_id() == remote_trace_id
-        }) && spans.iter().any(|span| {
-            span.name.as_ref() == "thread_spawn" && span.span_context.trace_id() == remote_trace_id
-        }) && spans.iter().any(|span| {
-            span.name.as_ref() == "session_init" && span.span_context.trace_id() == remote_trace_id
         })
     })
     .await;
+    let untraced_server_span = find_rpc_span_with_trace(
+        &untraced_spans,
+        SpanKind::Server,
+        "thread/start",
+        untraced_spans
+            .iter()
+            .rev()
+            .find(|span| {
+                span.span_kind == SpanKind::Server
+                    && span_attr(span, "rpc.system") == Some("jsonrpc")
+                    && span_attr(span, "rpc.method") == Some("thread/start")
+            })
+            .unwrap_or_else(|| {
+                panic!(
+                    "missing latest thread/start server span; exported spans:\n{}",
+                    format_spans(&untraced_spans)
+                )
+            })
+            .span_context
+            .trace_id(),
+    );
+    let untraced_create_thread_span = find_span_by_name_with_trace(
+        &untraced_spans,
+        "app_server.thread_start.create_thread",
+        untraced_server_span.span_context.trace_id(),
+    );
+    assert_ne!(untraced_create_thread_span.parent_span_id, SpanId::INVALID);
 
+    let baseline_len = untraced_spans.len();
+    let _: ThreadStartResponse = harness.start_thread(20_003, Some(remote_trace)).await;
+    let spans = wait_for_new_exported_spans(harness.tracing, baseline_len, |spans| {
+        spans.iter().any(|span| {
+            span.span_kind == SpanKind::Server
+                && span_attr(span, "rpc.method") == Some("thread/start")
+        }) && spans
+            .iter()
+            .any(|span| span.name.as_ref() == "app_server.thread_start.notify_started")
+    })
+    .await;
+
+    let create_thread_span = find_span_by_name_with_trace(
+        &spans,
+        "app_server.thread_start.create_thread",
+        remote_trace_id,
+    );
     let server_request_span =
         find_rpc_span_with_trace(&spans, SpanKind::Server, "thread/start", remote_trace_id);
     let thread_spawn_span = find_span_by_name_with_trace(&spans, "thread_spawn", remote_trace_id);
@@ -473,8 +525,21 @@ async fn thread_start_jsonrpc_span_exports_server_span_and_parents_children() ->
     assert_eq!(server_request_span.name.as_ref(), "thread/start");
     assert_eq!(server_request_span.span_context.trace_id(), remote_trace_id);
     assert_ne!(server_request_span.span_context.span_id(), SpanId::INVALID);
+    assert_eq!(
+        create_thread_span.span_context.trace_id(),
+        remote_trace_id,
+        "thread/start startup spans did not inherit the inbound request trace"
+    );
+    assert_span_descends_from(&spans, create_thread_span, server_request_span);
     assert_span_descends_from(&spans, thread_spawn_span, server_request_span);
     assert_span_descends_from(&spans, session_init_span, server_request_span);
+
+    let default_model_span =
+        find_span_by_name_with_trace(&spans, "get_default_model", remote_trace_id);
+    let session_init_rollout_span =
+        find_span_by_name_with_trace(&spans, "session_init.rollout", remote_trace_id);
+    assert_span_descends_from(&spans, default_model_span, server_request_span);
+    assert_span_descends_from(&spans, session_init_rollout_span, server_request_span);
     harness.shutdown().await;
 
     Ok(())
@@ -525,7 +590,7 @@ async fn turn_start_jsonrpc_span_parents_core_turn_spans() -> Result<()> {
                 && span_attr(span, "rpc.method") == Some("turn/start")
                 && span.span_context.trace_id() == remote_trace_id
         }) && spans.iter().any(|span| {
-            CORE_TURN_SANITY_SPAN_NAMES.contains(&span.name.as_ref())
+            span.name.as_ref() == "op.dispatch.user_input"
                 && span.span_context.trace_id() == remote_trace_id
         })
     })
@@ -533,18 +598,8 @@ async fn turn_start_jsonrpc_span_parents_core_turn_spans() -> Result<()> {
 
     let server_request_span =
         find_rpc_span_with_trace(&spans, SpanKind::Server, "turn/start", remote_trace_id);
-    let core_turn_span = spans
-        .iter()
-        .find(|span| {
-            CORE_TURN_SANITY_SPAN_NAMES.contains(&span.name.as_ref())
-                && span.span_context.trace_id() == remote_trace_id
-        })
-        .unwrap_or_else(|| {
-            panic!(
-                "missing representative core turn span for trace={remote_trace_id}; exported spans:\n{}",
-                format_spans(&spans)
-            )
-        });
+    let core_turn_span =
+        find_span_by_name_with_trace(&spans, "op.dispatch.user_input", remote_trace_id);
 
     assert_eq!(server_request_span.parent_span_id, remote_parent_span_id);
     assert!(server_request_span.parent_span_is_remote);
