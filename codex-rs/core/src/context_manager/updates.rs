@@ -49,7 +49,9 @@ where
 /// Add new turn-state fragments by:
 /// 1. Defining a typed fragment struct.
 /// 2. Implementing `ModelVisibleContextFragment` with `Role = DeveloperContextRole`.
-/// 3. Implementing `TurnContextDiffFragment::build`.
+/// 3. Implementing `TurnContextDiffFragment::build` (it may ignore the
+///    baseline and always return `Some(...)` if the fragment should be
+///    reinjected on every turn).
 /// 4. Registering the type here with `build_developer_turn_state_fragment::<YourType>`.
 const REGISTERED_DEVELOPER_TURN_STATE_FRAGMENT_BUILDERS: &[DeveloperTurnStateFragmentBuilder] = &[
     // Keep model-switch instructions first so model-specific guidance is read
