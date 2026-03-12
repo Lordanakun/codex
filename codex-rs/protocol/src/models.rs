@@ -28,18 +28,19 @@ use schemars::JsonSchema;
 
 use crate::mcp::CallToolResult;
 
-/// Controls whether a command should use the session sandbox or bypass it.
+/// Controls the per-command sandbox override requested by a shell-like tool call.
 #[derive(
     Debug, Clone, Copy, Default, Eq, Hash, PartialEq, Serialize, Deserialize, JsonSchema, TS,
 )]
 #[serde(rename_all = "snake_case")]
 pub enum SandboxPermissions {
-    /// Run with the configured sandbox
+    /// Run with the turn's configured sandbox policy unchanged.
     #[default]
     UseDefault,
-    /// Request to run outside the sandbox
+    /// Request to run outside the sandbox.
     RequireEscalated,
-    /// Request to run in the sandbox with additional per-command permissions.
+    /// Request to stay in the sandbox while widening permissions for this
+    /// command only.
     WithAdditionalPermissions,
 }
 
@@ -49,9 +50,16 @@ impl SandboxPermissions {
         matches!(self, SandboxPermissions::RequireEscalated)
     }
 
-    /// True if SandboxPermissions requires permissions beyond UseDefault
-    pub fn requires_additional_permissions(self) -> bool {
+    /// True if SandboxPermissions requests any explicit per-command override
+    /// beyond `UseDefault`.
+    pub fn requests_sandbox_override(self) -> bool {
         !matches!(self, SandboxPermissions::UseDefault)
+    }
+
+    /// True if SandboxPermissions uses the sandboxed per-command permission
+    /// widening flow.
+    pub fn uses_additional_permissions(self) -> bool {
+        matches!(self, SandboxPermissions::WithAdditionalPermissions)
     }
 }
 
@@ -209,25 +217,7 @@ pub struct PermissionProfile {
 
 impl PermissionProfile {
     pub fn is_empty(&self) -> bool {
-        self.network
-            .as_ref()
-            .map(NetworkPermissions::is_empty)
-            .unwrap_or(true)
-            && self
-                .file_system
-                .as_ref()
-                .map(FileSystemPermissions::is_empty)
-                .unwrap_or(true)
-            && self
-                .macos
-                .as_ref()
-                .map(|extensions| {
-                    extensions.macos_preferences == MacOsPreferencesPermission::None
-                        && extensions.macos_automation == MacOsAutomationPermission::None
-                        && !extensions.macos_accessibility
-                        && !extensions.macos_calendar
-                })
-                .unwrap_or(true)
+        self.network.is_none() && self.file_system.is_none() && self.macos.is_none()
     }
 }
 
