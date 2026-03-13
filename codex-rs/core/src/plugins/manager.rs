@@ -65,6 +65,7 @@ const DEFAULT_APP_CONFIG_FILE: &str = ".app.json";
 const OPENAI_CURATED_MARKETPLACE_NAME: &str = "openai-curated";
 const REMOTE_PLUGIN_SYNC_TIMEOUT: Duration = Duration::from_secs(30);
 static CURATED_REPO_SYNC_STARTED: AtomicBool = AtomicBool::new(false);
+const MAX_CAPABILITY_SUMMARY_DESCRIPTION_LEN: usize = 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct AppConnectorId(pub String);
@@ -175,7 +176,7 @@ impl PluginCapabilitySummary {
                 .manifest_name
                 .clone()
                 .unwrap_or_else(|| plugin.config_name.clone()),
-            description: plugin.manifest_description.clone(),
+            description: prompt_safe_plugin_description(plugin.manifest_description.as_deref()),
             has_skills: !plugin.skill_roots.is_empty(),
             mcp_server_names,
             app_connector_ids: plugin.apps.clone(),
@@ -185,6 +186,21 @@ impl PluginCapabilitySummary {
             || !summary.mcp_server_names.is_empty()
             || !summary.app_connector_ids.is_empty())
         .then_some(summary)
+    }
+}
+
+fn prompt_safe_plugin_description(description: Option<&str>) -> Option<String> {
+    let description = description?
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+
+    if description.is_empty()
+        || description.chars().count() > MAX_CAPABILITY_SUMMARY_DESCRIPTION_LEN
+    {
+        None
+    } else {
+        Some(description)
     }
 }
 

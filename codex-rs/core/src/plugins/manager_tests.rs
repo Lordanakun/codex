@@ -227,6 +227,70 @@ fn load_plugins_loads_default_skills_and_mcp_servers() {
 }
 
 #[test]
+fn capability_summary_sanitizes_plugin_descriptions_to_one_line() {
+    let codex_home = TempDir::new().unwrap();
+    let plugin_root = codex_home
+        .path()
+        .join("plugins/cache")
+        .join("test/sample/local");
+
+    write_file(
+        &plugin_root.join(".codex-plugin/plugin.json"),
+        r#"{
+  "name": "sample",
+  "description": "Plugin that\n includes   the sample\tserver"
+}"#,
+    );
+    write_file(
+        &plugin_root.join("skills/sample-search/SKILL.md"),
+        "---\nname: sample-search\ndescription: search sample data\n---\n",
+    );
+
+    let outcome = load_plugins_from_config(&plugin_config_toml(true, true), codex_home.path());
+
+    assert_eq!(
+        outcome.plugins[0].manifest_description.as_deref(),
+        Some("Plugin that\n includes   the sample\tserver")
+    );
+    assert_eq!(
+        outcome.capability_summaries()[0].description.as_deref(),
+        Some("Plugin that includes the sample server")
+    );
+}
+
+#[test]
+fn capability_summary_omits_overlong_plugin_descriptions() {
+    let codex_home = TempDir::new().unwrap();
+    let plugin_root = codex_home
+        .path()
+        .join("plugins/cache")
+        .join("test/sample/local");
+    let too_long = "x".repeat(MAX_CAPABILITY_SUMMARY_DESCRIPTION_LEN + 1);
+
+    write_file(
+        &plugin_root.join(".codex-plugin/plugin.json"),
+        &format!(
+            r#"{{
+  "name": "sample",
+  "description": "{too_long}"
+}}"#
+        ),
+    );
+    write_file(
+        &plugin_root.join("skills/sample-search/SKILL.md"),
+        "---\nname: sample-search\ndescription: search sample data\n---\n",
+    );
+
+    let outcome = load_plugins_from_config(&plugin_config_toml(true, true), codex_home.path());
+
+    assert_eq!(
+        outcome.plugins[0].manifest_description.as_deref(),
+        Some(too_long.as_str())
+    );
+    assert_eq!(outcome.capability_summaries()[0].description, None);
+}
+
+#[test]
 fn load_plugins_uses_manifest_configured_component_paths() {
     let codex_home = TempDir::new().unwrap();
     let plugin_root = codex_home
