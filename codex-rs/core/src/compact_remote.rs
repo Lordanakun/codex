@@ -88,7 +88,8 @@ async fn run_remote_compact_task_inner_impl(
         );
     }
     // Required to keep `/undo` available after compaction
-    let history_items = history.raw_items();
+    let history_clone = history.clone();
+    let history_items = history_clone.raw_items();
     let ghost_snapshots: Vec<ResponseItem> = history_items
         .iter()
         .filter(|item| matches!(item, ResponseItem::GhostSnapshot { .. }))
