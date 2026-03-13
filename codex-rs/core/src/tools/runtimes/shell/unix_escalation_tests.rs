@@ -15,6 +15,7 @@ use crate::config::Permissions;
 #[cfg(target_os = "macos")]
 use crate::config::types::ShellEnvironmentPolicy;
 use crate::exec::SandboxType;
+use crate::network_proxy_registry::NetworkProxyScope;
 use crate::protocol::AskForApproval;
 use crate::protocol::GranularApprovalConfig;
 use crate::protocol::ReadOnlyAccess;
@@ -96,6 +97,35 @@ fn test_skill_metadata(permission_profile: Option<PermissionProfile>) -> SkillMe
         path_to_skills_md: PathBuf::from("/tmp/skill/SKILL.md"),
         scope: SkillScope::User,
     }
+}
+
+#[test]
+fn network_proxy_scope_for_skill_without_override_reuses_session_default() {
+    let skill = test_skill_metadata(None);
+
+    assert_eq!(
+        super::network_proxy_scope_for_skill(&skill),
+        (NetworkProxyScope::SessionDefault, None),
+    );
+}
+
+#[test]
+fn network_proxy_scope_for_skill_with_override_uses_skill_scope() {
+    let mut skill = test_skill_metadata(None);
+    skill.managed_network_override = Some(crate::skills::model::SkillManagedNetworkOverride {
+        allowed_domains: Some(vec!["skill.example.com".to_string()]),
+        denied_domains: Some(vec!["blocked.skill.example.com".to_string()]),
+    });
+
+    assert_eq!(
+        super::network_proxy_scope_for_skill(&skill),
+        (
+            NetworkProxyScope::Skill {
+                path_to_skills_md: PathBuf::from("/tmp/skill/SKILL.md"),
+            },
+            skill.managed_network_override.clone(),
+        ),
+    );
 }
 
 #[test]
@@ -651,6 +681,7 @@ host_executable(name = "git", paths = ["{allowed_git_literal}"])
 async fn prepare_escalated_exec_turn_default_preserves_macos_seatbelt_extensions() {
     let cwd = AbsolutePathBuf::from_absolute_path(std::env::temp_dir()).unwrap();
     let executor = CoreShellCommandExecutor {
+        session: None,
         command: vec!["echo".to_string(), "ok".to_string()],
         cwd: cwd.to_path_buf(),
         env: HashMap::new(),
@@ -703,6 +734,7 @@ async fn prepare_escalated_exec_turn_default_preserves_macos_seatbelt_extensions
 async fn prepare_escalated_exec_permissions_preserve_macos_seatbelt_extensions() {
     let cwd = AbsolutePathBuf::from_absolute_path(std::env::temp_dir()).unwrap();
     let executor = CoreShellCommandExecutor {
+        session: None,
         command: vec!["echo".to_string(), "ok".to_string()],
         cwd: cwd.to_path_buf(),
         env: HashMap::new(),
@@ -777,6 +809,7 @@ async fn prepare_escalated_exec_permission_profile_unions_turn_and_requested_mac
     let cwd = AbsolutePathBuf::from_absolute_path(std::env::temp_dir()).unwrap();
     let sandbox_policy = SandboxPolicy::new_read_only_policy();
     let executor = CoreShellCommandExecutor {
+        session: None,
         command: vec!["echo".to_string(), "ok".to_string()],
         cwd: cwd.to_path_buf(),
         env: HashMap::new(),

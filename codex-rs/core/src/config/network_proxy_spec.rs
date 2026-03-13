@@ -1,4 +1,5 @@
 use crate::config_loader::NetworkConstraints;
+use crate::skills::model::SkillManagedNetworkOverride;
 use async_trait::async_trait;
 use codex_network_proxy::BlockedRequestObserver;
 use codex_network_proxy::ConfigReloader;
@@ -79,6 +80,28 @@ impl NetworkProxySpec {
 
     pub fn socks_enabled(&self) -> bool {
         self.config.network.enable_socks5
+    }
+
+    pub(crate) fn with_skill_managed_network_override(
+        &self,
+        managed_network_override: &SkillManagedNetworkOverride,
+    ) -> Self {
+        let mut spec = self.clone();
+
+        if let Some(allowed_domains) = managed_network_override.allowed_domains.clone() {
+            spec.config.network.allowed_domains = allowed_domains.clone();
+            if spec.constraints.allowed_domains.is_some() {
+                spec.constraints.allowed_domains = Some(allowed_domains);
+            }
+        }
+        if let Some(denied_domains) = managed_network_override.denied_domains.clone() {
+            spec.config.network.denied_domains = denied_domains.clone();
+            if spec.constraints.denied_domains.is_some() {
+                spec.constraints.denied_domains = Some(denied_domains);
+            }
+        }
+
+        spec
     }
 
     pub(crate) fn from_config_and_constraints(

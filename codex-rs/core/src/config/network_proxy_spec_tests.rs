@@ -2,6 +2,94 @@ use super::*;
 use pretty_assertions::assert_eq;
 
 #[test]
+fn skill_managed_network_override_replaces_allowed_domains_and_keeps_other_settings() {
+    let mut config = NetworkProxyConfig::default();
+    config.network.enabled = true;
+    config.network.proxy_url = "http://127.0.0.1:4128".to_string();
+    config.network.socks_url = "socks5://127.0.0.1:5128".to_string();
+    config.network.enable_socks5 = true;
+    config.network.enable_socks5_udp = true;
+    config.network.allowed_domains = vec!["default.example.com".to_string()];
+    config.network.denied_domains = vec!["blocked.example.com".to_string()];
+    config.network.allow_upstream_proxy = true;
+    config.network.dangerously_allow_all_unix_sockets = false;
+    config.network.dangerously_allow_non_loopback_proxy = false;
+    config.network.mode = codex_network_proxy::NetworkMode::Full;
+    config.network.allow_unix_sockets = vec!["/tmp/default.sock".to_string()];
+    config.network.allow_local_binding = true;
+    config.network.mitm = false;
+    let spec = NetworkProxySpec {
+        config,
+        constraints: NetworkProxyConstraints {
+            allowed_domains: Some(vec!["default.example.com".to_string()]),
+            denied_domains: Some(vec!["blocked.example.com".to_string()]),
+            allowlist_expansion_enabled: Some(true),
+            denylist_expansion_enabled: Some(false),
+            allow_upstream_proxy: Some(true),
+            allow_unix_sockets: Some(vec!["/tmp/default.sock".to_string()]),
+            allow_local_binding: Some(true),
+            ..NetworkProxyConstraints::default()
+        },
+        hard_deny_allowlist_misses: true,
+    };
+    let managed_network_override = crate::skills::model::SkillManagedNetworkOverride {
+        allowed_domains: Some(vec!["skill.example.com".to_string()]),
+        denied_domains: None,
+    };
+
+    let overridden = spec.with_skill_managed_network_override(&managed_network_override);
+
+    let mut expected = spec.clone();
+    expected.config.network.allowed_domains = vec!["skill.example.com".to_string()];
+    expected.constraints.allowed_domains = Some(vec!["skill.example.com".to_string()]);
+    assert_eq!(overridden, expected);
+}
+
+#[test]
+fn skill_managed_network_override_replaces_denied_domains_and_keeps_default_allowed_domains() {
+    let mut config = NetworkProxyConfig::default();
+    config.network.enabled = true;
+    config.network.proxy_url = "http://127.0.0.1:4128".to_string();
+    config.network.socks_url = "socks5://127.0.0.1:5128".to_string();
+    config.network.enable_socks5 = true;
+    config.network.enable_socks5_udp = true;
+    config.network.allowed_domains = vec!["default.example.com".to_string()];
+    config.network.denied_domains = vec!["blocked.example.com".to_string()];
+    config.network.allow_upstream_proxy = true;
+    config.network.dangerously_allow_all_unix_sockets = false;
+    config.network.dangerously_allow_non_loopback_proxy = false;
+    config.network.mode = codex_network_proxy::NetworkMode::Full;
+    config.network.allow_unix_sockets = vec!["/tmp/default.sock".to_string()];
+    config.network.allow_local_binding = true;
+    config.network.mitm = false;
+    let spec = NetworkProxySpec {
+        config,
+        constraints: NetworkProxyConstraints {
+            allowed_domains: Some(vec!["default.example.com".to_string()]),
+            denied_domains: Some(vec!["blocked.example.com".to_string()]),
+            allowlist_expansion_enabled: Some(true),
+            denylist_expansion_enabled: Some(false),
+            allow_upstream_proxy: Some(true),
+            allow_unix_sockets: Some(vec!["/tmp/default.sock".to_string()]),
+            allow_local_binding: Some(true),
+            ..NetworkProxyConstraints::default()
+        },
+        hard_deny_allowlist_misses: false,
+    };
+    let managed_network_override = crate::skills::model::SkillManagedNetworkOverride {
+        allowed_domains: None,
+        denied_domains: Some(vec!["skill-blocked.example.com".to_string()]),
+    };
+
+    let overridden = spec.with_skill_managed_network_override(&managed_network_override);
+
+    let mut expected = spec.clone();
+    expected.config.network.denied_domains = vec!["skill-blocked.example.com".to_string()];
+    expected.constraints.denied_domains = Some(vec!["skill-blocked.example.com".to_string()]);
+    assert_eq!(overridden, expected);
+}
+
+#[test]
 fn build_state_with_audit_metadata_threads_metadata_to_state() {
     let spec = NetworkProxySpec {
         config: NetworkProxyConfig::default(),

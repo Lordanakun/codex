@@ -1,4 +1,5 @@
 use super::*;
+use crate::network_proxy_registry::NetworkProxyScope;
 use codex_network_proxy::BlockedRequestArgs;
 use codex_protocol::protocol::AskForApproval;
 use pretty_assertions::assert_eq;
@@ -7,6 +8,7 @@ use pretty_assertions::assert_eq;
 async fn pending_approvals_are_deduped_per_host_protocol_and_port() {
     let service = NetworkApprovalService::default();
     let key = HostApprovalKey {
+        scope: NetworkProxyScope::SessionDefault,
         host: "example.com".to_string(),
         protocol: "http",
         port: 443,
@@ -24,11 +26,13 @@ async fn pending_approvals_are_deduped_per_host_protocol_and_port() {
 async fn pending_approvals_do_not_dedupe_across_ports() {
     let service = NetworkApprovalService::default();
     let first_key = HostApprovalKey {
+        scope: NetworkProxyScope::SessionDefault,
         host: "example.com".to_string(),
         protocol: "https",
         port: 443,
     };
     let second_key = HostApprovalKey {
+        scope: NetworkProxyScope::SessionDefault,
         host: "example.com".to_string(),
         protocol: "https",
         port: 8443,
@@ -49,16 +53,19 @@ async fn session_approved_hosts_preserve_protocol_and_port_scope() {
         let mut approved_hosts = source.session_approved_hosts.lock().await;
         approved_hosts.extend([
             HostApprovalKey {
+                scope: NetworkProxyScope::SessionDefault,
                 host: "example.com".to_string(),
                 protocol: "https",
                 port: 443,
             },
             HostApprovalKey {
+                scope: NetworkProxyScope::SessionDefault,
                 host: "example.com".to_string(),
                 protocol: "https",
                 port: 8443,
             },
             HostApprovalKey {
+                scope: NetworkProxyScope::SessionDefault,
                 host: "example.com".to_string(),
                 protocol: "http",
                 port: 80,
@@ -82,16 +89,19 @@ async fn session_approved_hosts_preserve_protocol_and_port_scope() {
         copied,
         vec![
             HostApprovalKey {
+                scope: NetworkProxyScope::SessionDefault,
                 host: "example.com".to_string(),
                 protocol: "http",
                 port: 80,
             },
             HostApprovalKey {
+                scope: NetworkProxyScope::SessionDefault,
                 host: "example.com".to_string(),
                 protocol: "https",
                 port: 443,
             },
             HostApprovalKey {
+                scope: NetworkProxyScope::SessionDefault,
                 host: "example.com".to_string(),
                 protocol: "https",
                 port: 8443,

@@ -4,6 +4,7 @@ use crate::guardian::GuardianApprovalRequest;
 use crate::guardian::review_approval_request;
 use crate::guardian::routes_approval_to_guardian;
 use crate::network_policy_decision::denied_network_policy_message;
+use crate::network_proxy_registry::NetworkProxyScope;
 use crate::tools::sandboxing::ToolError;
 use codex_network_proxy::BlockedRequest;
 use codex_network_proxy::BlockedRequestObserver;
@@ -76,14 +77,20 @@ impl ActiveNetworkApproval {
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct HostApprovalKey {
+    scope: NetworkProxyScope,
     host: String,
     protocol: &'static str,
     port: u16,
 }
 
 impl HostApprovalKey {
-    fn from_request(request: &NetworkPolicyRequest, protocol: NetworkApprovalProtocol) -> Self {
+    fn from_request(
+        request: &NetworkPolicyRequest,
+        protocol: NetworkApprovalProtocol,
+        scope: NetworkProxyScope,
+    ) -> Self {
         Self {
+            scope,
             host: request.host.to_ascii_lowercase(),
             protocol: protocol_key_label(protocol),
             port: request.port,
@@ -279,6 +286,7 @@ impl NetworkApprovalService {
         &self,
         session: Arc<Session>,
         request: NetworkPolicyRequest,
+        scope: NetworkProxyScope,
     ) -> NetworkDecision {
         const REASON_NOT_ALLOWED: &str = "not_allowed";
 
@@ -288,7 +296,7 @@ impl NetworkApprovalService {
             NetworkProtocol::Socks5Tcp => NetworkApprovalProtocol::Socks5Tcp,
             NetworkProtocol::Socks5Udp => NetworkApprovalProtocol::Socks5Udp,
         };
-        let key = HostApprovalKey::from_request(&request, protocol);
+        let key = HostApprovalKey::from_request(&request, protocol, scope.clone());
 
         {
             let denied_hosts = self.session_denied_hosts.lock().await;
@@ -387,6 +395,7 @@ impl NetworkApprovalService {
                         .persist_network_policy_amendment(
                             &network_policy_amendment,
                             &network_approval_context,
+                            &scope,
                         )
                         .await
                     {
@@ -417,6 +426,7 @@ impl NetworkApprovalService {
                         .persist_network_policy_amendment(
                             &network_policy_amendment,
                             &network_approval_context,
+                            &scope,
                         )
                         .await
                     {
@@ -506,16 +516,18 @@ pub(crate) fn build_blocked_request_observer(
 pub(crate) fn build_network_policy_decider(
     network_approval: Arc<NetworkApprovalService>,
     network_policy_decider_session: Arc<RwLock<std::sync::Weak<Session>>>,
+    scope: NetworkProxyScope,
 ) -> Arc<dyn NetworkPolicyDecider> {
     Arc::new(move |request: NetworkPolicyRequest| {
         let network_approval = Arc::clone(&network_approval);
         let network_policy_decider_session = Arc::clone(&network_policy_decider_session);
+        let scope = scope.clone();
         async move {
             let Some(session) = network_policy_decider_session.read().await.upgrade() else {
                 return NetworkDecision::ask("not_allowed");
             };
             network_approval
-                .handle_inline_policy_request(session, request)
+                .handle_inline_policy_request(session, request, scope)
                 .await
         }
     })
