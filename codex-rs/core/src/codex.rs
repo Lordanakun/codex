@@ -5386,6 +5386,7 @@ pub(crate) async fn run_turn(
     }
 
     let skills_outcome = Some(turn_context.turn_skills.outcome.as_ref());
+    let mut mid_turn_compaction_attempts: u32 = 0;
 
     sess.record_context_updates_and_set_reference_context_item(turn_context.as_ref())
         .await;
@@ -5704,8 +5705,17 @@ pub(crate) async fn run_turn(
                     "post sampling token usage"
                 );
 
-                // as long as compaction works well in getting us way below the token limit, we shouldn't worry about being in an infinite loop.
+                // Fix for infinite loop from issue #13946.
                 if token_limit_reached && needs_follow_up {
+                    mid_turn_compaction_attempts += 1;
+                    if mid_turn_compaction_attempts > 3 {
+                        error!(
+                            turn_id = %turn_context.sub_id,
+                            mid_turn_compaction_attempts,
+                            "mid-turn compaction exceeded retry limit"
+                        );
+                        return None;
+                    }
                     if run_auto_compact(
                         &sess,
                         &turn_context,

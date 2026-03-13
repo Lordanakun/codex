@@ -88,8 +88,8 @@ async fn run_remote_compact_task_inner_impl(
         );
     }
     // Required to keep `/undo` available after compaction
-    let ghost_snapshots: Vec<ResponseItem> = history
-        .raw_items()
+    let history_items = history.raw_items();
+    let ghost_snapshots: Vec<ResponseItem> = history_items
         .iter()
         .filter(|item| matches!(item, ResponseItem::GhostSnapshot { .. }))
         .cloned()
@@ -152,6 +152,12 @@ async fn run_remote_compact_task_inner_impl(
         InitialContextInjection::DoNotInject => None,
         InitialContextInjection::BeforeLastUserMessage => Some(turn_context.to_turn_context_item()),
     };
+    // Fix for race condition from issue #13946.
+    let latest_history_snapshot = sess.clone_history().await;
+    let latest_history_items = latest_history_snapshot.raw_items();
+    if latest_history_items.len() > history_items.len() {
+        new_history.extend_from_slice(&latest_history_items[history_items.len()..]);
+    }
     let compacted_item = CompactedItem {
         message: String::new(),
         replacement_history: Some(new_history.clone()),

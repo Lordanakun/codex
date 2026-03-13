@@ -214,6 +214,12 @@ async fn run_compact_task_inner(
         InitialContextInjection::DoNotInject => None,
         InitialContextInjection::BeforeLastUserMessage => Some(turn_context.to_turn_context_item()),
     };
+    // Fix for race condition from issue #13946.
+    let latest_history_snapshot = sess.clone_history().await;
+    let latest_history_items = latest_history_snapshot.raw_items();
+    if latest_history_items.len() > history_items.len() {
+        new_history.extend_from_slice(&latest_history_items[history_items.len()..]);
+    }
     let compacted_item = CompactedItem {
         message: summary_text.clone(),
         replacement_history: Some(new_history.clone()),
