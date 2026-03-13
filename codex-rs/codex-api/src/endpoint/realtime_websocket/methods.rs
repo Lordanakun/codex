@@ -308,7 +308,7 @@ impl RealtimeWebsocketWriter {
         session_mode: RealtimeSessionMode,
     ) -> Result<(), ApiError> {
         let (session_kind, session_instructions, output_audio) = match session_mode {
-            RealtimeSessionMode::DialIn => (
+            RealtimeSessionMode::Conversational => (
                 "quicksilver".to_string(),
                 Some(instructions),
                 Some(SessionAudioOutput {
@@ -589,7 +589,7 @@ fn websocket_url_from_api_url(
     {
         let mut query = url.query_pairs_mut();
         let intent = match session_mode {
-            RealtimeSessionMode::DialIn => "quicksilver",
+            RealtimeSessionMode::Conversational => "quicksilver",
             RealtimeSessionMode::Transcription => "transcription",
         };
         query.append_pair("intent", intent);
@@ -877,7 +877,7 @@ mod tests {
             "http://127.0.0.1:8011",
             None,
             None,
-            RealtimeSessionMode::DialIn,
+            RealtimeSessionMode::Conversational,
         )
         .expect("build ws url");
         assert_eq!(
@@ -892,7 +892,7 @@ mod tests {
             "wss://example.com",
             None,
             Some("realtime-test-model"),
-            RealtimeSessionMode::DialIn,
+            RealtimeSessionMode::Conversational,
         )
         .expect("build ws url");
         assert_eq!(
@@ -907,7 +907,7 @@ mod tests {
             "https://api.openai.com/v1",
             None,
             Some("snapshot"),
-            RealtimeSessionMode::DialIn,
+            RealtimeSessionMode::Conversational,
         )
         .expect("build ws url");
         assert_eq!(
@@ -922,7 +922,7 @@ mod tests {
             "https://example.com/openai/v1",
             None,
             Some("snapshot"),
-            RealtimeSessionMode::DialIn,
+            RealtimeSessionMode::Conversational,
         )
         .expect("build ws url");
         assert_eq!(
@@ -940,7 +940,7 @@ mod tests {
                 ("intent".to_string(), "ignored".to_string()),
             ])),
             Some("snapshot"),
-            RealtimeSessionMode::DialIn,
+            RealtimeSessionMode::Conversational,
         )
         .expect("build ws url");
         assert_eq!(
@@ -1129,7 +1129,7 @@ mod tests {
                     model: Some("realtime-test-model".to_string()),
                     session_id: Some("conv_1".to_string()),
                     event_parser: RealtimeEventParser::V1,
-                    session_mode: RealtimeSessionMode::DialIn,
+                    session_mode: RealtimeSessionMode::Conversational,
                 },
                 HeaderMap::new(),
                 HeaderMap::new(),
@@ -1417,7 +1417,7 @@ mod tests {
                     model: Some("realtime-test-model".to_string()),
                     session_id: Some("conv_1".to_string()),
                     event_parser: RealtimeEventParser::V1,
-                    session_mode: RealtimeSessionMode::DialIn,
+                    session_mode: RealtimeSessionMode::Conversational,
                 },
                 HeaderMap::new(),
                 HeaderMap::new(),
