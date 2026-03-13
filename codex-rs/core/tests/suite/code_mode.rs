@@ -86,15 +86,14 @@ fn custom_tool_output_body_and_success(
         .custom_tool_call_output_content_and_success(call_id)
         .expect("custom tool output should be present");
     let items = custom_tool_output_items(req, call_id);
-    let output = items
+    let text_items = items
         .iter()
-        .skip(1)
         .filter_map(|item| item.get("text").and_then(Value::as_str))
-        .collect::<String>();
-    let output = if output.is_empty() {
-        content.unwrap_or_default()
-    } else {
-        output
+        .collect::<Vec<_>>();
+    let output = match text_items.as_slice() {
+        [] => content.unwrap_or_default(),
+        [only] => (*only).to_string(),
+        [_, rest @ ..] => rest.concat(),
     };
     (output, success)
 }
