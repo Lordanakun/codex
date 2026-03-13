@@ -53,12 +53,11 @@
     },
     "DynamicToolSpec": {
       "properties": {
+        "deferLoading": {
+          "type": "boolean"
+        },
         "description": {
           "type": "string"
-        },
-        "exposeToContext": {
-          "default": true,
-          "type": "boolean"
         },
         "inputSchema": true,
         "name": {
