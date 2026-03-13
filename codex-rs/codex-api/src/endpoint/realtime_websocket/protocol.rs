@@ -14,12 +14,19 @@ pub enum RealtimeEventParser {
     RealtimeV2,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RealtimeSessionMode {
+    DialIn,
+    Transcription,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RealtimeSessionConfig {
     pub instructions: String,
     pub model: Option<String>,
     pub session_id: Option<String>,
     pub event_parser: RealtimeEventParser,
+    pub session_mode: RealtimeSessionMode,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -42,14 +49,16 @@ pub(super) enum RealtimeOutboundMessage {
 pub(super) struct SessionUpdateSession {
     #[serde(rename = "type")]
     pub(super) kind: String,
-    pub(super) instructions: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) instructions: Option<String>,
     pub(super) audio: SessionAudio,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub(super) struct SessionAudio {
     pub(super) input: SessionAudioInput,
-    pub(super) output: SessionAudioOutput,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) output: Option<SessionAudioOutput>,
 }
 
 #[derive(Debug, Clone, Serialize)]
